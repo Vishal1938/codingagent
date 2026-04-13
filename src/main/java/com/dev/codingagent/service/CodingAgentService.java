@@ -1,5 +1,6 @@
-package com.dev.codingagent;
+package com.dev.codingagent.service;
 
+import com.dev.codingagent.dto.AgentResponse;
 import org.springaicommunity.agent.tools.FileSystemTools;
 import org.springaicommunity.agent.tools.GlobTool;
 import org.springaicommunity.agent.tools.GrepTool;

@@ -1,5 +1,8 @@
-package com.dev.codingagent;
+package com.dev.codingagent.controller;
 
+import com.dev.codingagent.dto.AgentRequest;
+import com.dev.codingagent.dto.AgentResponse;
+import com.dev.codingagent.service.CodingAgentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;

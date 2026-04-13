@@ -1,4 +1,4 @@
-package com.dev.codingagent;
+package com.dev.codingagent.dto;
 
 public record AgentRequest(
         String prompt,
