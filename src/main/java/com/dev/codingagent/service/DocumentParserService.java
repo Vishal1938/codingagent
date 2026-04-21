@@ -70,4 +70,15 @@ public class DocumentParserService {
         log.info("📃  Extracting text from TXT...");
         return new String(inputStream.readAllBytes());
     }
+
+    // Add this method to DocumentParserService — accepts raw bytes instead of MultipartFile
+    public String extractTextFromBytes(byte[] bytes, String fileName) throws IOException {
+        String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+        return switch (extension) {
+            case "pdf"  -> extractFromPdf(new java.io.ByteArrayInputStream(bytes));
+            case "docx" -> extractFromDocx(new java.io.ByteArrayInputStream(bytes));
+            case "txt"  -> new String(bytes);
+            default -> throw new IllegalArgumentException("Unsupported file type: " + extension);
+        };
+    }
 }

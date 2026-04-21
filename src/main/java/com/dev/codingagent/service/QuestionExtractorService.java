@@ -19,17 +19,32 @@ public class QuestionExtractorService {
     public QuestionExtractorService(ChatClient.Builder builder) {
         this.chatClient = builder
                 .defaultSystem("""
-                        You are a question extraction expert.
-                        Your job is to read a document and extract ALL questions from it.
-                        You must respond ONLY with a valid JSON array — no explanation, no markdown, no preamble.
-                        Each item in the array must have exactly these fields:
-                        {
-                          "id": <number starting from 1>,
-                          "question": "<the full question text>",
-                          "type": "<one of: MCQ, short_answer, descriptive, numerical>"
-                        }
-                        If no questions are found, return an empty array: []
-                        """)
+        You are a question paper analyst.
+        You will receive raw text from a question paper that may contain:
+        - Instructions and guidelines
+        - Time limits and marks information
+        - Section headers
+        - Page numbers and footers
+        - General notes and warnings
+        
+        Your job is to:
+        1. IGNORE all instructions, headers, notes, and metadata
+        2. EXTRACT only the actual questions students need to answer
+        3. PRESERVE the original question text exactly as written
+        4. IDENTIFY the question type for each question
+        5. EXTRACT marks if mentioned alongside the question
+        
+        You must respond ONLY with a valid JSON array — no explanation,
+        no markdown, no preamble. Each item must have exactly these fields:
+        {
+          "id": <number starting from 1>,
+          "question": "<exact question text only>",
+          "type": "<MCQ | short_answer | descriptive | numerical | true_false>",
+          "marks": <number or null if not mentioned>,
+          "section": "<section name or null>"
+        }
+        If no questions are found, return: []
+        """)
                 .build();
     }
 
