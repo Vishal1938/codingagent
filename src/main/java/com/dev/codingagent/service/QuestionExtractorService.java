@@ -1,5 +1,6 @@
 package com.dev.codingagent.service;
 
+import com.dev.codingagent.dto.ExtractedQuestion;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -103,5 +104,5 @@ public class QuestionExtractorService {
     }
 
     // Inner record matching LLM JSON output
-    public record ExtractedQuestion(int id, String question, String type) {}
+//    public record ExtractedQuestion(int id, String question, String type) {}
 }

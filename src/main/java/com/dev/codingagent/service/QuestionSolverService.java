@@ -1,5 +1,6 @@
 package com.dev.codingagent.service;
 
+import com.dev.codingagent.dto.ExtractedQuestion;
 import com.dev.codingagent.dto.QuestionAnswer;
 import com.dev.codingagent.dto.QuestionSolverResponse;
 import org.slf4j.Logger;
@@ -17,14 +18,15 @@ public class QuestionSolverService {
     private final DocumentParserService documentParser;
     private final QuestionExtractorService questionExtractor;
     private final AnswerGeneratorService answerGenerator;
-
+    private final PageQuestionExtractorService pageQuestionExtractorService;
     public QuestionSolverService(
             DocumentParserService documentParser,
             QuestionExtractorService questionExtractor,
-            AnswerGeneratorService answerGenerator) {
+            AnswerGeneratorService answerGenerator,PageQuestionExtractorService pageQuestionExtractorService) {
         this.documentParser = documentParser;
         this.questionExtractor = questionExtractor;
         this.answerGenerator = answerGenerator;
+        this.pageQuestionExtractorService=pageQuestionExtractorService;
     }
 
     public QuestionSolverResponse solve(MultipartFile file, String systemPrompt) throws IOException {
@@ -41,8 +43,10 @@ public class QuestionSolverService {
 
         // ── Step 2: Extract questions ──────────────────────────
         log.info("📌  Step 2/3 — Extracting questions...");
-        List<QuestionExtractorService.ExtractedQuestion> questions =
-                questionExtractor.extractQuestions(documentText);
+//        List<ExtractedQuestion> questions =
+//                questionExtractor.extractQuestions(documentText);
+        List<ExtractedQuestion> questions= pageQuestionExtractorService.extractFromPdf(file).allQuestions();
+
 
         if (questions.isEmpty()) {
             log.warn("⚠️  No questions found in document");

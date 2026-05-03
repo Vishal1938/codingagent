@@ -34,8 +34,13 @@ public class PageExtractionController {
         }
 
         String fileName = file.getOriginalFilename();
-        if (fileName == null || !fileName.toLowerCase().endsWith(".pdf")) {
-            log.warn("⚠️  Only PDF files supported for page extraction");
+        if (fileName == null) {
+            return ResponseEntity.badRequest().build();
+        }
+
+        String lower = fileName.toLowerCase();
+        if (!lower.endsWith(".pdf") && !lower.endsWith(".txt")) {
+            log.warn("⚠️  Unsupported file type: {}", fileName);
             return ResponseEntity.badRequest().build();
         }
 

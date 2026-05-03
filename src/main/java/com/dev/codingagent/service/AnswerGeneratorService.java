@@ -1,5 +1,6 @@
 package com.dev.codingagent.service;
 
+import com.dev.codingagent.dto.ExtractedQuestion;
 import com.dev.codingagent.dto.QuestionAnswer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +30,7 @@ public class AnswerGeneratorService {
     }
 
     public List<QuestionAnswer> generateAnswers(
-            List<QuestionExtractorService.ExtractedQuestion> questions,
+            List<ExtractedQuestion> questions,
             String customSystemPrompt) {
 
         log.info("💡  Generating answers for {} questions...", questions.size());
@@ -40,7 +41,7 @@ public class AnswerGeneratorService {
     }
 
     private QuestionAnswer solveQuestion(
-            QuestionExtractorService.ExtractedQuestion question,
+            ExtractedQuestion question,
             String customSystemPrompt) {
 
         log.info("❓  Solving Q-{}: {}", question.id(),

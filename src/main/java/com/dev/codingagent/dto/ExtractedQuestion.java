@@ -1,6 +1,9 @@
 package com.dev.codingagent.dto;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record ExtractedQuestion(
         int id,
         String question,

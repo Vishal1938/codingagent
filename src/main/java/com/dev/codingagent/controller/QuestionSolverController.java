@@ -20,7 +20,7 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/solver")
-@CrossOrigin(origins = "http://localhost:3001")
+@CrossOrigin(origins = "http://localhost:3000")
 public class QuestionSolverController {
 
     private static final Logger log = LoggerFactory.getLogger(QuestionSolverController.class);
