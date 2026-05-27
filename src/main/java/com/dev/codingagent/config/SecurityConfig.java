@@ -6,6 +6,7 @@ import com.dev.codingagent.security.JwtAuthFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -21,6 +22,8 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -43,37 +46,26 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
-                // Disable CSRF — not needed for stateless JWT APIs
+                .cors(cors -> cors.configurationSource(request -> {
+                    var config = new org.springframework.web.cors.CorsConfiguration();
+                    config.setAllowedOrigins(List.of("http://localhost:3000"));
+                    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+                    config.setAllowedHeaders(List.of("*"));
+                    config.setAllowCredentials(false);
+                    return config;
+                }))
                 .csrf(AbstractHttpConfigurer::disable)
-
-                // Stateless session — Spring Security must NOT create HttpSessions
                 .sessionManagement(session ->
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-
-                // Route access rules
                 .authorizeHttpRequests(auth -> auth
-
-                        // ── Public endpoints — no token needed ─────────────────
-                        .requestMatchers(
-                                "/api/auth/**"          // register + login
-                        ).permitAll()
-
-                        // ── Protected endpoints — valid JWT required ────────────
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()  // ← let preflight through
+                        .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/api/extractor/**").authenticated()
                         .requestMatchers("/api/solver/**").authenticated()
                         .requestMatchers("/api/pdf/**").authenticated()
-
-                        // ── Admin-only endpoints ────────────────────────────────
-                        // .requestMatchers("/api/admin/**").hasRole("ADMIN")
-
-                        // ── Everything else requires authentication ─────────────
                         .anyRequest().authenticated()
                 )
-
-                // Wire our JWT filter BEFORE the default username/password filter
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
-
-                // Use our custom auth provider (loads from DB, uses BCrypt)
                 .authenticationProvider(authenticationProvider());
 
         return http.build();
