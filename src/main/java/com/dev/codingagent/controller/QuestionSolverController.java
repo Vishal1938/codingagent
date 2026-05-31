@@ -1,8 +1,11 @@
 package com.dev.codingagent.controller;
 
+import com.dev.codingagent.dto.JobResultDto;
 import com.dev.codingagent.dto.JobStore;
 import com.dev.codingagent.dto.QuestionSolverResponse;
 import com.dev.codingagent.dto.SolverJob;
+import com.dev.codingagent.entity.JobResult;
+import com.dev.codingagent.repository.JobResultRepository;
 import com.dev.codingagent.service.AsyncQuestionSolverService;
 import com.dev.codingagent.service.QuestionSolverService;
 import org.slf4j.Logger;
@@ -12,9 +15,13 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.io.File;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -25,19 +32,23 @@ public class QuestionSolverController {
 
     private static final Logger log = LoggerFactory.getLogger(QuestionSolverController.class);
 
-    private final QuestionSolverService solverService;             // existing sync
-    private final AsyncQuestionSolverService asyncSolverService;   // new async
-    private final JobStore jobStore;
+    private final QuestionSolverService      solverService;
+    private final AsyncQuestionSolverService asyncSolverService;
+    private final JobStore                   jobStore;
+    private final JobResultRepository        jobResultRepository;  // ← NEW
 
     public QuestionSolverController(QuestionSolverService solverService,
                                     AsyncQuestionSolverService asyncSolverService,
-                                    JobStore jobStore) {
-        this.solverService = solverService;
-        this.asyncSolverService = asyncSolverService;
-        this.jobStore = jobStore;
+                                    JobStore jobStore,
+                                    JobResultRepository jobResultRepository) {
+        this.solverService       = solverService;
+        this.asyncSolverService  = asyncSolverService;
+        this.jobStore            = jobStore;
+        this.jobResultRepository = jobResultRepository;
     }
 
-    // ── EXISTING sync endpoint — unchanged ✅ ──────────────────
+    // ── Sync solve — unchanged ─────────────────────────────────────────────
+
     @PostMapping(value = "/solve", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<QuestionSolverResponse> solve(
             @RequestParam("file") MultipartFile file,
@@ -51,59 +62,95 @@ public class QuestionSolverController {
         }
     }
 
-    // ── NEW: async submit ──────────────────────────────────────
+    // ── Async submit ───────────────────────────────────────────────────────
+
     @PostMapping(value = "/solve-async", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<Map<String, String>> solveAsync(
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "systemPrompt", required = false) String systemPrompt,
-            @RequestParam(value = "email", required = false) String email) throws Exception {
+            @RequestParam(value = "email", required = false) String email,
+            @AuthenticationPrincipal UserDetails userDetails) throws Exception {
 
-        log.info("📡  POST /api/solver/solve-async");
-        log.info("📄  File: {} | Email: {}", file.getOriginalFilename(), email);
+        // Get logged-in user's email from JWT — no extra param needed from frontend
+        String userEmail = userDetails.getUsername();
+        log.info("📡  POST /api/solver/solve-async | user: {} | file: {}",
+                userEmail, file.getOriginalFilename());
 
         String jobId = UUID.randomUUID().toString();
         SolverJob job = new SolverJob(jobId, file.getOriginalFilename());
         jobStore.save(job);
 
-        // Read bytes before multipart expires
         byte[] fileBytes = file.getBytes();
 
-        // Fire and forget
+        // Pass userEmail so async service persists result against this user
         asyncSolverService.processAsync(job, fileBytes,
-                file.getOriginalFilename(), systemPrompt, email);
+                file.getOriginalFilename(), systemPrompt, email, userEmail);
 
         return ResponseEntity.accepted().body(Map.of(
-                "jobId", jobId,
-                "status", "PENDING",
-                "message", "Processing started. Poll /status/" + jobId + " to check progress.",
+                "jobId",       jobId,
+                "status",      "PENDING",
+                "message",     "Processing started. Poll /status/" + jobId,
                 "downloadUrl", "/api/solver/result/" + jobId + "/download"
         ));
     }
 
-    // ── NEW: poll job status ───────────────────────────────────
+    // ── Poll job status ────────────────────────────────────────────────────
+
     @GetMapping("/status/{jobId}")
     public ResponseEntity<Map<String, String>> getStatus(@PathVariable String jobId) {
         return jobStore.findById(jobId)
                 .map(job -> ResponseEntity.ok(Map.of(
-                        "jobId", job.getJobId(),
-                        "status", job.getStatus().name(),
-                        "fileName", job.getFileName() != null ? job.getFileName() : "",
-                        "createdAt", job.getCreatedAt().toString(),
-                        "completedAt", job.getCompletedAt() != null ? job.getCompletedAt().toString() : "",
+                        "jobId",       job.getJobId(),
+                        "status",      job.getStatus().name(),
+                        "fileName",    job.getFileName() != null ? job.getFileName() : "",
+                        "createdAt",   job.getCreatedAt().toString(),
+                        "completedAt", job.getCompletedAt() != null
+                                ? job.getCompletedAt().toString() : "",
                         "downloadUrl", job.getStatus() == SolverJob.Status.DONE
                                 ? "/api/solver/result/" + jobId + "/download" : "",
-                        "error", job.getErrorMessage() != null ? job.getErrorMessage() : ""
+                        "error",       job.getErrorMessage() != null
+                                ? job.getErrorMessage() : ""
                 )))
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // ── NEW: download PDF ──────────────────────────────────────
+    // ── Job history for logged-in user ─────────────────────────────────────
+
+    @GetMapping("/history")
+    public ResponseEntity<List<JobResultDto>> getHistory(
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        String userEmail = userDetails.getUsername();
+        log.info("📡  GET /api/solver/history | user: {}", userEmail);
+
+        List<JobResultDto> history = jobResultRepository
+                .findByUserEmailOrderByCreatedAtDesc(userEmail)
+                .stream()
+                .map(JobResultDto::from)
+                .toList();
+
+        return ResponseEntity.ok(history);
+    }
+
+    // ── Download PDF — ownership validated ────────────────────────────────
+
     @GetMapping("/result/{jobId}/download")
-    public ResponseEntity<Resource> download(@PathVariable String jobId) {
-        return jobStore.findById(jobId)
-                .filter(job -> job.getStatus() == SolverJob.Status.DONE)
-                .map(job -> {
-                    File file = new File(job.getPdfPath());
+    public ResponseEntity<Resource> download(
+            @PathVariable String jobId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+
+        String userEmail = userDetails.getUsername();
+        log.info("📡  GET /api/solver/result/{}/download | user: {}", jobId, userEmail);
+
+        return (ResponseEntity<Resource>) jobResultRepository
+                .findByJobIdAndUserEmail(jobId, userEmail)  // validates ownership
+                .filter(r -> "DONE".equals(r.getStatus()))
+                .map(r -> {
+                    File file = new File(r.getPdfPath());
+                    if (!file.exists()) {
+                        log.warn("⚠️  PDF not found on disk: {}", r.getPdfPath());
+                        return ResponseEntity.<Resource>notFound().build();
+                    }
                     Resource resource = new FileSystemResource(file);
                     return ResponseEntity.ok()
                             .header(HttpHeaders.CONTENT_DISPOSITION,
@@ -111,6 +158,9 @@ public class QuestionSolverController {
                             .contentType(MediaType.APPLICATION_PDF)
                             .body(resource);
                 })
-                .orElse(ResponseEntity.notFound().build());
+                .orElseGet(() -> {
+                    log.warn("⚠️  Job {} not found or not owned by {}", jobId, userEmail);
+                    return ResponseEntity.<Resource>notFound().build();
+                });
     }
 }

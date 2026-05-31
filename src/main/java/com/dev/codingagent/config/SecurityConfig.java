@@ -63,6 +63,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/extractor/**").authenticated()
                         .requestMatchers("/api/solver/**").authenticated()
                         .requestMatchers("/api/pdf/**").authenticated()
+                        .requestMatchers("/api/solver/history").authenticated()
+                        .requestMatchers("/api/solver/result/**").authenticated()
                         .anyRequest().authenticated()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
