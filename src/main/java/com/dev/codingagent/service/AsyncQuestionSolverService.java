@@ -81,10 +81,17 @@ public class AsyncQuestionSolverService {
             jobStore.save(job);
             log.info("✅  Job {} completed", job.getJobId());
 
-            // Step 5 — Send email if provided
+            // Step 5 — Send email (best-effort — don't fail the job if this fails)
             if (email != null && !email.isBlank()) {
-                log.info("📧  Sending email to: {}", email);
-                emailService.sendResultEmail(email, job.getJobId(), fileName, pdfPath);
+                try {
+                    log.info("📧  Sending email to: {}", email);
+                    emailService.sendResultEmail(email, job.getJobId(), fileName, pdfPath);
+                    log.info("📧  Email sent successfully to: {}", email);
+                } catch (Exception e) {
+                    // Email failed — log it but don't mark job as failed
+                    // User can still download the PDF directly
+                    log.error("📧  Email failed (Railway blocks SMTP 587): {}", e.getMessage());
+                }
             }
 
         } catch (Exception e) {
