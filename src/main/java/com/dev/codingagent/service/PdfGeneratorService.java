@@ -10,13 +10,16 @@ import com.itextpdf.kernel.pdf.canvas.draw.SolidLine;
 import com.itextpdf.layout.properties.TextAlignment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class PdfGeneratorService {
@@ -26,8 +29,22 @@ public class PdfGeneratorService {
     @Value("${solver.output.dir}")
     private String outputDir;
 
-    public String generatePdf(String jobId, String sourceFileName,
-                              List<QuestionAnswer> answers) throws IOException {
+//    private final SupabaseStorageService storageService;
+
+    @Autowired
+    private CloudinaryStorageService storageService;
+
+
+//    public PdfGeneratorService(
+//            SupabaseStorageService storageService
+//    ) {
+//        this.storageService = storageService;
+//    }
+
+    public Map<String,String> generatePdf(String jobId, String sourceFileName,
+                              List<QuestionAnswer> answers,String userEmail) throws IOException {
+
+        Map<String,String> pdfData= new HashMap<>();
 
         // Ensure output directory exists
         File dir = new File(outputDir);
@@ -80,7 +97,17 @@ public class PdfGeneratorService {
             }
         }
 
+        File pdfFile = new File(pdfPath);
+        pdfData.put("pdfFile",pdfPath);
+        String publicUrl = storageService.uploadPdf(
+                pdfFile,
+                 jobId ,userEmail
+        );
+        pdfData.put("publicUrl",publicUrl);
+
+        // optional cleanup
+        //        pdfFile.delete();
         log.info("✅  PDF generated successfully: {}", pdfPath);
-        return pdfPath;
+        return pdfData;
     }
 }

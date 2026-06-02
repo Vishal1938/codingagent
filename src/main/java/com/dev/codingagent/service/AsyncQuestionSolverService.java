@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class AsyncQuestionSolverService {
@@ -86,16 +87,19 @@ public class AsyncQuestionSolverService {
 
             // Step 4 — Generate PDF
             log.info("📌  [{}] Generating PDF...", job.getJobId());
-            String pdfPath = pdfGenerator.generatePdf(job.getJobId(), fileName, answers);
+            Map<String,String> pdfData = pdfGenerator.generatePdf(job.getJobId(), fileName, answers,userEmail);
+            String pdfPath =pdfData.get("pdfFile");
+            String publicUrl= pdfData.get("publicUrl");
 
             long elapsed = System.currentTimeMillis() - start;
 
             // Mark in-memory job done
-            job.markDone(pdfPath);
+            job.markDone(pdfPath,publicUrl);
+
             jobStore.save(job);
 
             // ── Persist to MongoDB ─────────────────────────────────────────
-            jobResult.markDone(pdfPath, elapsed, questions.size());
+            jobResult.markDone(pdfPath, elapsed, questions.size(),publicUrl);
             jobResultRepository.save(jobResult);
             log.info("✅  Job {} completed and persisted for user: {}",
                     job.getJobId(), userEmail);
@@ -104,7 +108,7 @@ public class AsyncQuestionSolverService {
             if (email != null && !email.isBlank()) {
                 try {
                     log.info("📧  Sending email to: {}", email);
-                    emailService.sendResultEmail(email, job.getJobId(), fileName, pdfPath);
+                    emailService.sendResultEmail(email, job.getJobId(), fileName, pdfPath,publicUrl);
                     log.info("📧  Email sent successfully to: {}", email);
                 } catch (Exception e) {
                     log.error("📧  Email failed (non-fatal): {}", e.getMessage());

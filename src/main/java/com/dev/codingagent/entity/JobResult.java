@@ -31,6 +31,7 @@ public class JobResult {
     private String errorMessage;
     private LocalDateTime createdAt  = LocalDateTime.now();
     private LocalDateTime completedAt;
+    private String publicUrl;
 
     // ── Constructors ──────────────────────────────────────────
 
@@ -58,6 +59,10 @@ public class JobResult {
     public LocalDateTime getCreatedAt()          { return createdAt; }
     public LocalDateTime getCompletedAt()        { return completedAt; }
 
+    public String getPublicUrl() {
+        return publicUrl;
+    }
+
     public void setId(String id)                         { this.id = id; }
     public void setJobId(String jobId)                   { this.jobId = jobId; }
     public void setUserEmail(String userEmail)           { this.userEmail = userEmail; }
@@ -70,14 +75,18 @@ public class JobResult {
     public void setCreatedAt(LocalDateTime t)            { this.createdAt = t; }
     public void setCompletedAt(LocalDateTime t)          { this.completedAt = t; }
 
+    public void setPublicUrl(String publicUrl) {
+        this.publicUrl = publicUrl;
+    }
     // ── Convenience ───────────────────────────────────────────
 
-    public void markDone(String pdfPath, long processingTimeMs, int totalQuestions) {
+    public void markDone(String pdfPath, long processingTimeMs, int totalQuestions,String publicUrl) {
         this.pdfPath          = pdfPath;
         this.processingTimeMs = processingTimeMs;
         this.totalQuestions   = totalQuestions;
         this.status           = "DONE";
         this.completedAt      = LocalDateTime.now();
+        this.publicUrl=publicUrl;
     }
 
     public void markFailed(String error) {

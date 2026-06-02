@@ -32,7 +32,7 @@ public class EmailService {
     @Value("${resend.from-email:noreply@resend.dev}")
     private String resendFromEmail;
 
-    @Value("${mail.provider:smtp}")   // "smtp" or "resend"
+    @Value("${mail.provider:smtp}")
     private String mailProvider;
 
     public EmailService(JavaMailSender mailSender) {
@@ -41,26 +41,28 @@ public class EmailService {
 
     // ─────────────────────────────────────────────────────────────────────────
     // Public entry point — picks provider based on mail.provider property
+    // Now accepts publicUrl so both attachment AND download link are included
     // ─────────────────────────────────────────────────────────────────────────
 
     public void sendResultEmail(String toEmail, String jobId,
-                                String fileName, String pdfPath) throws Exception {
+                                String fileName, String pdfPath,
+                                String publicUrl) throws Exception {
         log.info("📧  Sending result email to: {} via provider: {}", toEmail, mailProvider);
 
         if ("resend".equalsIgnoreCase(mailProvider)) {
-            sendViaResend(toEmail, jobId, fileName, pdfPath);
+            sendViaResend(toEmail, jobId, fileName, pdfPath, publicUrl);
         } else {
-            sendViaSmtp(toEmail, jobId, fileName, pdfPath);
+            sendViaSmtp(toEmail, jobId, fileName, pdfPath, publicUrl);
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Option 1 — Gmail SMTP (original implementation)
-    // Works locally. Blocked on Railway port 587 — switch to Resend.
+    // Option 1 — Gmail SMTP
+    // Attaches PDF + includes download link in body
     // ─────────────────────────────────────────────────────────────────────────
 
-    public void sendViaSmtp(String toEmail, String jobId,
-                            String fileName, String pdfPath) throws MessagingException {
+    public void sendViaSmtp(String toEmail, String jobId, String fileName,
+                            String pdfPath, String publicUrl) throws MessagingException {
         log.info("📧  [SMTP] Sending to: {}", toEmail);
 
         MimeMessage message = mailSender.createMimeMessage();
@@ -68,56 +70,73 @@ public class EmailService {
 
         helper.setTo(toEmail);
         helper.setSubject("Your Q&A Results are Ready — " + fileName);
-        helper.setText(buildEmailBody(fileName, jobId));
+        helper.setText(buildEmailBodyPlain(fileName, jobId, publicUrl), false);
 
-        FileSystemResource file = new FileSystemResource(new File(pdfPath));
-        helper.addAttachment("QA_Report_" + jobId + ".pdf", file);
+        // Attach PDF if file exists on disk
+        File pdfFile = new File(pdfPath);
+        if (pdfFile.exists()) {
+            helper.addAttachment("QA_Report_" + jobId + ".pdf",
+                    new FileSystemResource(pdfFile));
+            log.info("📎  PDF attached from disk: {}", pdfPath);
+        } else {
+            log.warn("⚠️  PDF not found on disk — sending link only: {}", pdfPath);
+        }
 
         mailSender.send(message);
         log.info("✅  [SMTP] Email sent successfully to: {}", toEmail);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Option 2 — Resend API (works on Railway — sends over HTTPS not SMTP)
-    // Docs: https://resend.com/docs/api-reference/emails/send-email
+    // Option 2 — Resend API
+    // Attaches PDF as Base64 + includes download link in HTML body
     // ─────────────────────────────────────────────────────────────────────────
 
-    public void sendViaResend(String toEmail, String jobId,
-                              String fileName, String pdfPath) throws IOException, InterruptedException {
+    public void sendViaResend(String toEmail, String jobId, String fileName,
+                              String pdfPath, String publicUrl)
+            throws IOException, InterruptedException {
 
         log.info("📧  [Resend] Sending to: {}", toEmail);
 
         if (resendApiKey == null || resendApiKey.isBlank()) {
-            throw new IllegalStateException("Resend API key is not configured (resend.api-key)");
+            throw new IllegalStateException(
+                    "Resend API key not configured (resend.api-key)");
         }
 
-        // Read PDF and encode as Base64 for the attachment
-        byte[] pdfBytes   = Files.readAllBytes(new File(pdfPath).toPath());
-        String pdfBase64  = Base64.getEncoder().encodeToString(pdfBytes);
-        String attachName = "QA_Report_" + jobId + ".pdf";
+        // Build attachments block — include PDF if file still exists on disk
+        String attachmentsJson = "";
+        File pdfFile = new File(pdfPath);
+        if (pdfFile.exists()) {
+            byte[] pdfBytes  = Files.readAllBytes(pdfFile.toPath());
+            String pdfBase64 = Base64.getEncoder().encodeToString(pdfBytes);
+            attachmentsJson  = """
+                    "attachments": [
+                        {
+                          "filename": "QA_Report_%s.pdf",
+                          "content": "%s"
+                        }
+                      ],
+                    """.formatted(jobId, pdfBase64);
+            log.info("📎  PDF attached from disk ({} bytes)", pdfBytes.length);
+        } else {
+            log.warn("⚠️  PDF not found on disk — sending link only: {}", pdfPath);
+        }
 
-        // Build JSON payload manually — no extra dependency needed
-        // Resend API: POST https://api.resend.com/emails
         String jsonBody = """
                 {
                   "from": "%s",
                   "to": ["%s"],
                   "subject": "Your Q&A Results are Ready — %s",
                   "html": "%s",
-                  "attachments": [
-                    {
-                      "filename": "%s",
-                      "content": "%s"
-                    }
-                  ]
+                  %s
+                  "tags": [{"name": "jobId", "value": "%s"}]
                 }
                 """.formatted(
                 resendFromEmail,
                 toEmail,
                 escapeJson(fileName),
-                escapeJson(buildEmailBodyHtml(fileName, jobId)),
-                attachName,
-                pdfBase64
+                escapeJson(buildEmailBodyHtml(fileName, jobId, publicUrl)),
+                attachmentsJson,
+                jobId
         );
 
         HttpClient  client  = HttpClient.newHttpClient();
@@ -128,56 +147,101 @@ public class EmailService {
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
-        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response =
+                client.send(request, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() == 200 || response.statusCode() == 201) {
-            log.info("✅  [Resend] Email sent successfully to: {} | response: {}", toEmail, response.body());
+            log.info("✅  [Resend] Email sent successfully to: {} | response: {}",
+                    toEmail, response.body());
         } else {
-            log.error("❌  [Resend] Failed to send email | status: {} | body: {}",
+            log.error("❌  [Resend] Failed | status: {} | body: {}",
                     response.statusCode(), response.body());
-            throw new IOException("Resend API error: " + response.statusCode() + " — " + response.body());
+            throw new IOException("Resend API error: "
+                    + response.statusCode() + " — " + response.body());
         }
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Shared helpers
+    // Email body builders
     // ─────────────────────────────────────────────────────────────────────────
 
-    private String buildEmailBody(String fileName, String jobId) {
+    private String buildEmailBodyPlain(String fileName, String jobId, String publicUrl) {
+        String linkSection = (publicUrl != null && !publicUrl.isBlank())
+                ? "\nDownload link (also available online): " + publicUrl + "\n"
+                : "";
         return """
                 Hello,
-                
+
                 Your question paper has been processed successfully!
-                
-                File: %s
+
+                File:   %s
                 Job ID: %s
-                
-                Please find the complete Q&A report attached as a PDF.
-                
+                %s
+                The complete Q&A report is attached as a PDF.
+                If the attachment is unavailable, use the download link above.
+
                 Regards,
                 Question Solver
-                """.formatted(fileName, jobId);
+                """.formatted(fileName, jobId, linkSection);
     }
 
-    private String buildEmailBodyHtml(String fileName, String jobId) {
+    private String buildEmailBodyHtml(String fileName, String jobId, String publicUrl) {
+        // Download button — only shown when publicUrl is available
+        String downloadBtn = (publicUrl != null && !publicUrl.isBlank())
+                ? """
+                  <a href="%s"
+                     style="display:inline-block;margin:20px 0;padding:12px 24px;
+                            background:#111;color:#fff;border-radius:8px;
+                            text-decoration:none;font-weight:600;font-size:14px">
+                    ↓ Download PDF Report
+                  </a>
+                  """.formatted(publicUrl)
+                : "";
+
         return """
-                <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:24px">
-                  <h2 style="color:#111">Your Q&amp;A Report is Ready ✅</h2>
-                  <p>Your question paper has been processed successfully.</p>
-                  <table style="margin:16px 0;border-collapse:collapse;width:100%%">
+                <div style="font-family:system-ui,sans-serif;max-width:560px;
+                            margin:0 auto;padding:32px 24px;color:#111">
+
+                  <div style="margin-bottom:24px">
+                    <div style="display:inline-block;background:#111;color:#fff;
+                                border-radius:8px;padding:6px 12px;
+                                font-size:12px;font-weight:600;letter-spacing:0.5px">
+                      QUESTION SOLVER
+                    </div>
+                  </div>
+
+                  <h2 style="font-size:22px;font-weight:700;margin:0 0 8px">
+                    Your Q&amp;A Report is Ready ✅
+                  </h2>
+                  <p style="color:#6b7280;margin:0 0 24px;font-size:14px;line-height:1.6">
+                    Your question paper has been processed successfully.
+                    The PDF report is attached to this email.
+                  </p>
+
+                  <table style="width:100%%;border-collapse:collapse;
+                                border:1px solid #e5e7eb;border-radius:8px;
+                                overflow:hidden;font-size:13px;margin-bottom:8px">
                     <tr>
-                      <td style="padding:8px 12px;background:#f3f4f6;font-weight:600;width:80px">File</td>
-                      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb">%s</td>
+                      <td style="padding:10px 14px;background:#f9fafb;
+                                 font-weight:600;width:90px;color:#374151">File</td>
+                      <td style="padding:10px 14px;border-left:1px solid #e5e7eb">%s</td>
                     </tr>
-                    <tr>
-                      <td style="padding:8px 12px;background:#f3f4f6;font-weight:600">Job ID</td>
-                      <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-family:monospace;font-size:12px">%s</td>
+                    <tr style="border-top:1px solid #e5e7eb">
+                      <td style="padding:10px 14px;background:#f9fafb;font-weight:600;color:#374151">Job ID</td>
+                      <td style="padding:10px 14px;border-left:1px solid #e5e7eb;
+                                 font-family:monospace;font-size:11px;color:#6b7280">%s</td>
                     </tr>
                   </table>
-                  <p>The complete Q&amp;A report is attached as a PDF.</p>
-                  <p style="color:#6b7280;font-size:12px;margin-top:32px">Question Solver — AI-powered document analysis</p>
+
+                  %s
+
+                  <p style="color:#9ca3af;font-size:11px;margin-top:32px;
+                             border-top:1px solid #f3f4f6;padding-top:16px">
+                    If the attachment didn't arrive, use the download button above.
+                    This link is permanently available as long as your account is active.
+                  </p>
                 </div>
-                """.formatted(fileName, jobId);
+                """.formatted(fileName, jobId, downloadBtn);
     }
 
     /** Escape special characters for embedding in a JSON string value. */

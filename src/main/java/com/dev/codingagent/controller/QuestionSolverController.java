@@ -10,14 +10,17 @@ import com.dev.codingagent.service.AsyncQuestionSolverService;
 import com.dev.codingagent.service.QuestionSolverService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
@@ -133,7 +136,7 @@ public class QuestionSolverController {
     }
 
     // ── Download PDF — ownership validated ────────────────────────────────
-
+    // Replace only the download method in QuestionSolverController.java
     @GetMapping("/result/{jobId}/download")
     public ResponseEntity<Resource> download(
             @PathVariable String jobId,
@@ -143,20 +146,61 @@ public class QuestionSolverController {
         log.info("📡  GET /api/solver/result/{}/download | user: {}", jobId, userEmail);
 
         return (ResponseEntity<Resource>) jobResultRepository
-                .findByJobIdAndUserEmail(jobId, userEmail)  // validates ownership
+                .findByJobIdAndUserEmail(jobId, userEmail)
                 .filter(r -> "DONE".equals(r.getStatus()))
                 .map(r -> {
+
+                    // ── Option 1: File exists on disk — serve directly ────────
                     File file = new File(r.getPdfPath());
-                    if (!file.exists()) {
-                        log.warn("⚠️  PDF not found on disk: {}", r.getPdfPath());
-                        return ResponseEntity.<Resource>notFound().build();
+                    if (file.exists()) {
+                        log.info("📁  Serving PDF from disk: {}", r.getPdfPath());
+                        Resource resource = new FileSystemResource(file);
+                        return ResponseEntity.ok()
+                                .header(HttpHeaders.CONTENT_DISPOSITION,
+                                        "attachment; filename=\"QA_Report_" + jobId + ".pdf\"")
+                                .contentType(MediaType.APPLICATION_PDF)
+                                .<Resource>body(resource);
                     }
-                    Resource resource = new FileSystemResource(file);
-                    return ResponseEntity.ok()
-                            .header(HttpHeaders.CONTENT_DISPOSITION,
-                                    "attachment; filename=\"QA_Report_" + jobId + ".pdf\"")
-                            .contentType(MediaType.APPLICATION_PDF)
-                            .body(resource);
+
+                    // ── Option 2: File gone — fetch from Cloudinary and stream back ──
+                    if (r.getPublicUrl() != null && !r.getPublicUrl().isBlank()) {
+                        log.info("☁️  PDF not on disk — fetching from Cloudinary: {}",
+                                r.getPublicUrl());
+                        try {
+                            // Fetch PDF bytes from Cloudinary on the server side
+                            RestClient restClient = RestClient.create();
+                            byte[] pdfBytes = restClient.get()
+                                    .uri(r.getPublicUrl())
+                                    .retrieve()
+                                    .body(byte[].class);
+
+                            if (pdfBytes == null || pdfBytes.length == 0) {
+                                log.warn("⚠️  Cloudinary returned empty response for job: {}", jobId);
+                                return ResponseEntity.<Resource>notFound().build();
+                            }
+
+                            // Wrap bytes as a Resource and stream to client
+                            Resource resource = new ByteArrayResource(pdfBytes);
+                            log.info("✅  Streaming {} bytes from Cloudinary for job: {}",
+                                    pdfBytes.length, jobId);
+
+                            return ResponseEntity.ok()
+                                    .header(HttpHeaders.CONTENT_DISPOSITION,
+                                            "attachment; filename=\"QA_Report_" + jobId + ".pdf\"")
+                                    .contentType(MediaType.APPLICATION_PDF)
+                                    .<Resource>body(resource);
+
+                        } catch (Exception e) {
+                            log.error("❌  Failed to fetch PDF from Cloudinary for job {}: {}",
+                                    jobId, e.getMessage());
+                            return ResponseEntity.<Resource>internalServerError().build();
+                        }
+                    }
+
+                    // ── Option 3: Neither available ────────────────────────────
+                    log.warn("⚠️  PDF unavailable — no disk file and no Cloudinary URL: {}",
+                            jobId);
+                    return ResponseEntity.<Resource>notFound().build();
                 })
                 .orElseGet(() -> {
                     log.warn("⚠️  Job {} not found or not owned by {}", jobId, userEmail);

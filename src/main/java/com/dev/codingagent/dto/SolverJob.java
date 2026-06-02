@@ -11,6 +11,7 @@ public class SolverJob {
     private Status status;
     private String fileName;
     private String pdfPath;
+    private String pdfUrl;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime completedAt;
@@ -29,12 +30,16 @@ public class SolverJob {
     public String getErrorMessage()    { return errorMessage; }
     public LocalDateTime getCreatedAt(){ return createdAt; }
     public LocalDateTime getCompletedAt(){ return completedAt; }
+    public String getPdfUrl() {
+        return pdfUrl;
+    }
 
     public void markProcessing() { this.status = Status.PROCESSING; }
 
-    public void markDone(String pdfPath) {
+    public void markDone(String pdfPath,String pdfUrl) {
         this.status = Status.DONE;
         this.pdfPath = pdfPath;
+        this.pdfUrl=pdfUrl;
         this.completedAt = LocalDateTime.now();
     }
 
