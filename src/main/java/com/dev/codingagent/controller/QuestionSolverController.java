@@ -4,7 +4,6 @@ import com.dev.codingagent.dto.JobResultDto;
 import com.dev.codingagent.dto.JobStore;
 import com.dev.codingagent.dto.QuestionSolverResponse;
 import com.dev.codingagent.dto.SolverJob;
-import com.dev.codingagent.entity.JobResult;
 import com.dev.codingagent.repository.JobResultRepository;
 import com.dev.codingagent.service.AsyncQuestionSolverService;
 import com.dev.codingagent.service.QuestionSolverService;
@@ -14,7 +13,6 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -118,7 +116,6 @@ public class QuestionSolverController {
     }
 
     // ── Job history for logged-in user ─────────────────────────────────────
-
     @GetMapping("/history")
     public ResponseEntity<List<JobResultDto>> getHistory(
             @AuthenticationPrincipal UserDetails userDetails) {
@@ -136,7 +133,6 @@ public class QuestionSolverController {
     }
 
     // ── Download PDF — ownership validated ────────────────────────────────
-    // Replace only the download method in QuestionSolverController.java
     @GetMapping("/result/{jobId}/download")
     public ResponseEntity<Resource> download(
             @PathVariable String jobId,

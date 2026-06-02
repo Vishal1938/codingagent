@@ -8,6 +8,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.stream.Collectors;
@@ -16,6 +18,15 @@ import java.util.stream.Collectors;
 public class DocumentParserService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentParserService.class);
+
+    // Threshold below which a PDF page is considered image-based → fall back to OCR
+    private static final int OCR_FALLBACK_CHAR_THRESHOLD = 50;
+
+    private final OcrService ocrService;
+
+    public DocumentParserService(OcrService ocrService) {
+        this.ocrService = ocrService;
+    }
 
     public String extractText(MultipartFile file) throws IOException {
         String fileName = file.getOriginalFilename();
@@ -43,12 +54,35 @@ public class DocumentParserService {
         return extractedText;
     }
 
+    /**
+     * PDF extraction with OCR fallback for image-based PDFs.
+     *
+     * Strategy:
+     * 1. Try PDFBox's text-layer extraction first (fast, ~5ms per page)
+     * 2. If total extracted text is too small relative to page count,
+     *    treat it as an image-based PDF and run OCR on every page (~3-5s per page)
+     */
     private String extractFromPdf(InputStream inputStream) throws IOException {
         log.info("📑  Extracting text from PDF...");
         try (PDDocument document = PDDocument.load(inputStream)) {
+
+            // Try standard text extraction first
             PDFTextStripper stripper = new PDFTextStripper();
-            String text = stripper.getText(document);
-            log.info("✅  PDF pages processed: {}", document.getNumberOfPages());
+            String text = stripper.getText(document).trim();
+            int numPages = document.getNumberOfPages();
+            log.info("📑  PDFBox extracted {} chars from {} pages", text.length(), numPages);
+
+            // Heuristic: if avg text per page < threshold, this is likely a scanned PDF
+            int avgCharsPerPage = numPages > 0 ? text.length() / numPages : 0;
+            if (avgCharsPerPage < OCR_FALLBACK_CHAR_THRESHOLD) {
+                log.warn("⚠️  PDF appears image-based (avg {} chars/page) — running OCR fallback",
+                        avgCharsPerPage);
+                String ocrText = ocrService.ocrEntireDocument(document);
+                log.info("✅  OCR fallback complete — {} chars extracted", ocrText.length());
+                return ocrText;
+            }
+
+            log.info("✅  PDF text layer is sufficient — no OCR needed");
             return text;
         }
     }
@@ -71,12 +105,12 @@ public class DocumentParserService {
         return new String(inputStream.readAllBytes());
     }
 
-    // Add this method to DocumentParserService — accepts raw bytes instead of MultipartFile
+    /** Accepts raw bytes — used by AsyncQuestionSolverService. */
     public String extractTextFromBytes(byte[] bytes, String fileName) throws IOException {
         String extension = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
         return switch (extension) {
-            case "pdf"  -> extractFromPdf(new java.io.ByteArrayInputStream(bytes));
-            case "docx" -> extractFromDocx(new java.io.ByteArrayInputStream(bytes));
+            case "pdf"  -> extractFromPdf(new ByteArrayInputStream(bytes));
+            case "docx" -> extractFromDocx(new ByteArrayInputStream(bytes));
             case "txt"  -> new String(bytes);
             default -> throw new IllegalArgumentException("Unsupported file type: " + extension);
         };

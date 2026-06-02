@@ -11,6 +11,7 @@ import org.apache.pdfbox.text.PDFTextStripper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -42,6 +43,9 @@ public class PageQuestionExtractorService {
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService executor = Executors.newFixedThreadPool(PARALLEL_THREADS);
+
+    @Autowired
+    private OcrService ocrService;
 
     // System prompts stored as constants — clean, readable, and easy to tune.
     private static final String DETECTOR_SYSTEM = """
@@ -227,16 +231,42 @@ public class PageQuestionExtractorService {
         return extractPdfPages(file);
     }
 
+//    private List<String> extractPdfPages(MultipartFile file) throws IOException {
+//        List<String> pages = new ArrayList<>();
+//        try (PDDocument document = PDDocument.load(file.getInputStream())) {
+//            PDFTextStripper stripper = new PDFTextStripper();
+//            int numPages = document.getNumberOfPages();
+//            for (int i = 1; i <= numPages; i++) {
+//                stripper.setStartPage(i);
+//                stripper.setEndPage(i);
+//                String text = stripper.getText(document);
+//                pages.add(text != null ? text.trim() : "");
+//            }
+//        }
+//        return pages;
+//    }
+
+    // 3. Replace extractPdfPages with this version — per-page OCR fallback:
     private List<String> extractPdfPages(MultipartFile file) throws IOException {
         List<String> pages = new ArrayList<>();
         try (PDDocument document = PDDocument.load(file.getInputStream())) {
             PDFTextStripper stripper = new PDFTextStripper();
             int numPages = document.getNumberOfPages();
+
             for (int i = 1; i <= numPages; i++) {
                 stripper.setStartPage(i);
                 stripper.setEndPage(i);
-                String text = stripper.getText(document);
-                pages.add(text != null ? text.trim() : "");
+                String text = stripper.getText(document).trim();
+
+                // Per-page fallback — handles mixed PDFs (some pages text, some scanned)
+                if (text.length() >= 50) {
+                    log.info("📄  Page {} — text layer found ({} chars)", i, text.length());
+                    pages.add(text);
+                } else {
+                    log.warn("⚠️  Page {} appears image-based ({} chars) — running OCR", i, text.length());
+                    String ocrText = ocrService.ocrPage(document, i);
+                    pages.add(ocrText);
+                }
             }
         }
         return pages;
