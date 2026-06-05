@@ -1,17 +1,7 @@
 package com.dev.codingagent;
 
-import org.springaicommunity.agent.tools.FileSystemTools;
-import org.springaicommunity.agent.tools.GlobTool;
-import org.springaicommunity.agent.tools.GrepTool;
-import org.springaicommunity.agent.tools.ShellTools;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
-
-import java.util.Map;
-import java.util.Scanner;
 
 @SpringBootApplication
 public class CodingagentApplication {
