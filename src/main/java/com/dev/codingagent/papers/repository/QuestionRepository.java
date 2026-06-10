@@ -22,5 +22,7 @@ public interface QuestionRepository extends MongoRepository<Question, String> {
     @Query("{ 'subject': ?0, 'board': ?1, 'class': ?2, 'isPublic': true }")
     List<Question> findForSampling(String subject, String board, String classLevel);
 
+    List<Question> findByJobId(String jobId);
+
     long countByPaperId(String paperId);
 }

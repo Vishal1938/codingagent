@@ -65,6 +65,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/pdf/**").authenticated()
                         .requestMatchers("/api/solver/history").authenticated()
                         .requestMatchers("/api/solver/result/**").authenticated()
+                        .requestMatchers("/api/admin/papers/**").hasRole("ADMIN")
                         .requestMatchers("/api/papers/**").authenticated()
                         .anyRequest().authenticated()
                 )

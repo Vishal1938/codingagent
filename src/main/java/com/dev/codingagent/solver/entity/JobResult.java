@@ -47,6 +47,15 @@ public class JobResult {
 
     // ── Getters & Setters ─────────────────────────────────────
 
+    // Community sharing (PR-3)
+    private Boolean sharedToCommunity = false;   // user clicked "Share"
+    private String  linkedPaperId;               // populated once shared → paper created
+
+    public Boolean getSharedToCommunity()              { return sharedToCommunity; }
+    public void    setSharedToCommunity(Boolean b)     { this.sharedToCommunity = b; }
+    public String  getLinkedPaperId()                  { return linkedPaperId; }
+    public void    setLinkedPaperId(String s)          { this.linkedPaperId = s; }
+
     public String getId()                        { return id; }
     public String getJobId()                     { return jobId; }
     public String getUserEmail()                 { return userEmail; }

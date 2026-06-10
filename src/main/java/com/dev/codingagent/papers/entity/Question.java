@@ -41,6 +41,12 @@ public class Question {
     private String topic;
     private String subtopic;
 
+    @Indexed
+    private String jobId;          // ← NEW — set when question comes from a solve job
+
+    public String getJobId()              { return jobId; }
+    public void   setJobId(String jobId)  { this.jobId = jobId; }
+
     // Source identification
     private String board;             // CBSE | ICSE | State-UP | etc.
     @org.springframework.data.mongodb.core.mapping.Field("class")

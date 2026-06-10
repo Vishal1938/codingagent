@@ -1,5 +1,7 @@
 package com.dev.codingagent.solver.controller;
 
+import com.dev.codingagent.papers.dto.QuestionDto;
+import com.dev.codingagent.papers.repository.QuestionRepository;
 import com.dev.codingagent.solver.dto.JobResultDto;
 import com.dev.codingagent.solver.dto.JobStore;
 import com.dev.codingagent.solver.dto.QuestionSolverResponse;
@@ -36,16 +38,18 @@ public class QuestionSolverController {
     private final QuestionSolverService      solverService;
     private final AsyncQuestionSolverService asyncSolverService;
     private final JobStore                   jobStore;
-    private final JobResultRepository        jobResultRepository;  // ← NEW
+    private final JobResultRepository        jobResultRepository;//
+    private final QuestionRepository questionRepository;
 
     public QuestionSolverController(QuestionSolverService solverService,
                                     AsyncQuestionSolverService asyncSolverService,
                                     JobStore jobStore,
-                                    JobResultRepository jobResultRepository) {
+                                    JobResultRepository jobResultRepository,QuestionRepository questionRepository) {
         this.solverService       = solverService;
         this.asyncSolverService  = asyncSolverService;
         this.jobStore            = jobStore;
         this.jobResultRepository = jobResultRepository;
+        this.questionRepository=questionRepository;
     }
 
     // ── Sync solve — unchanged ─────────────────────────────────────────────
@@ -202,5 +206,28 @@ public class QuestionSolverController {
                     log.warn("⚠️  Job {} not found or not owned by {}", jobId, userEmail);
                     return ResponseEntity.<Resource>notFound().build();
                 });
+    }
+
+    @GetMapping("/result/{jobId}/questions")
+    public ResponseEntity<?> getQuestions(
+            @PathVariable String jobId,
+            @AuthenticationPrincipal UserDetails user) {
+
+        log.info("📡  GET /api/solver/result/{}/questions | user: {}", jobId, user.getUsername());
+
+        // Ownership check — verify this job belongs to the user
+        boolean owns = jobResultRepository
+                .findByJobIdAndUserEmail(jobId, user.getUsername())
+                .isPresent();
+        if (!owns) {
+            return ResponseEntity.status(403).body(Map.of("error", "Not your report"));
+        }
+
+        List<QuestionDto> questions = questionRepository.findByJobId(jobId)
+                .stream()
+                .map(QuestionDto::from)
+                .toList();
+
+        return ResponseEntity.ok(questions);
     }
 }

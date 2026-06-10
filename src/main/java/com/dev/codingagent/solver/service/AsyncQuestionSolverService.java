@@ -1,5 +1,6 @@
 package com.dev.codingagent.solver.service;
 
+import com.dev.codingagent.papers.service.SolvedQuestionService;
 import com.dev.codingagent.solver.dto.*;
 import com.dev.codingagent.solver.entity.JobResult;
 import com.dev.codingagent.solver.repository.JobResultRepository;
@@ -25,7 +26,9 @@ public class AsyncQuestionSolverService {
     private final EmailService                 emailService;
     private final JobStore jobStore;
     private final PageQuestionExtractorService pageQuestionExtractorService;
-    private final JobResultRepository          jobResultRepository;  // ← NEW
+    private final JobResultRepository          jobResultRepository;  //
+    private final SolvedQuestionService solvedQuestionService;
+
 
     public AsyncQuestionSolverService(
             DocumentParserService documentParser,
@@ -35,7 +38,7 @@ public class AsyncQuestionSolverService {
             EmailService emailService,
             JobStore jobStore,
             PageQuestionExtractorService pageQuestionExtractorService,
-            JobResultRepository jobResultRepository) {
+            JobResultRepository jobResultRepository,SolvedQuestionService solvedQuestionService) {
         this.documentParser              = documentParser;
         this.questionExtractor           = questionExtractor;
         this.answerGenerator             = answerGenerator;
@@ -44,6 +47,7 @@ public class AsyncQuestionSolverService {
         this.jobStore                    = jobStore;
         this.pageQuestionExtractorService = pageQuestionExtractorService;
         this.jobResultRepository         = jobResultRepository;
+        this.solvedQuestionService=solvedQuestionService;
     }
 
     // ── userEmail added — needed to persist result per user ───────────────
@@ -84,6 +88,14 @@ public class AsyncQuestionSolverService {
             log.info("📌  [{}] Step 3/3 Generating answers...", job.getJobId());
             List<QuestionAnswer> answers =
                     answerGenerator.generateAnswers(questions, systemPrompt);
+
+            // Persist structured Q&A so the UI can render it inline
+            try {
+                solvedQuestionService.persistSolvedQA(job.getJobId(), userEmail, questions, answers);
+            } catch (Exception e) {
+                // Non-fatal — PDF still works, just no inline view for this job
+                log.warn("Failed to persist Q&A for inline view (non-fatal): {}", e.getMessage());
+            }
 
             // Step 4 — Generate PDF
             log.info("📌  [{}] Generating PDF...", job.getJobId());
